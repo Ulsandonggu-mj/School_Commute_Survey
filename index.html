@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>안전한 통학길 조성을 위한 통학로 안전 설문 (2026)</title>
+<!-- v2 (2026.11.14.): 학교 좌표, 서버 혼잡 시 자동 재전송, 사고 원인 선택형, 먼 지점 경고, 글 위치 안내 -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/proj4@2.12.1/dist/proj4.js"></script>
+<style>
+  :root{
+    --pri:#1d5f8a; --pri-soft:#e8f1f8; --ink:#1f2933; --sub:#5b6773; --line:#d9e0e6;
+    --bg:#f4f6f8; --err:#c0392b; --ok:#1e824c; --warn:#b9770e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+    font-size:16px;line-height:1.55;-webkit-text-size-adjust:100%}
+  .wrap{max-width:760px;margin:0 auto;padding:16px 14px 80px}
+  header.intro{background:#fff;border-top:6px solid var(--pri);border-radius:10px;padding:20px 18px;margin-bottom:14px}
+  header.intro h1{font-size:1.3rem;margin:0 0 10px;line-height:1.4}
+  header.intro p{margin:6px 0;color:var(--sub)}
+  header.intro .meta{font-size:.88rem;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+  .notice{background:var(--pri-soft);border-radius:8px;padding:10px 12px;font-size:.92rem;margin-top:10px;color:var(--ink)}
+  .sec{margin:22px 4px 8px;font-weight:700;color:var(--pri);font-size:1.05rem}
+  .q{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:12px}
+  .q.err{border-color:var(--err);box-shadow:0 0 0 2px rgba(192,57,43,.12)}
+  .q .label{font-weight:600;margin-bottom:4px}
+  .q .label .req{color:var(--err);margin-left:3px}
+  .q .label .tag{display:inline-block;font-size:.72rem;font-weight:600;color:#fff;background:var(--warn);
+    border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+  .q .help{color:var(--sub);font-size:.88rem;margin-bottom:8px}
+  .q .errmsg{display:none;color:var(--err);font-size:.86rem;margin-top:6px}
+  .q.err .errmsg{display:block}
+  .opts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .opt{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:#fff}
+  .opt:has(input:checked){border-color:var(--pri);background:var(--pri-soft)}
+  .opt input{width:18px;height:18px;margin:0;accent-color:var(--pri);flex:none}
+  .other-in{margin-top:6px}
+  input[type=text],textarea,select{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  textarea{min-height:90px;resize:vertical}
+  .refnote{background:#fffaf0;border:1px solid #f0e0bd;border-radius:10px;padding:12px 14px;font-size:.88rem;color:#5c4a1e;margin-bottom:12px}
+  /* 지도 문항 */
+  .mapbox{margin-top:10px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .mapbar{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:#f7f9fb;border-bottom:1px solid var(--line)}
+  .mapbar button{font:inherit;font-size:.85rem;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer}
+  .mapbar button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+  .mapbar .close{display:none;margin-left:auto;background:var(--ink);color:#fff;border-color:var(--ink)}
+  .map{height:320px;background:#e9edf0}
+  .mapbox.full{position:fixed;inset:0;z-index:10000;border-radius:0;display:flex;flex-direction:column}
+  .mapbox.full .map{flex:1;height:auto}
+  .mapbox.full .mapbar .close{display:inline-block}
+  .maphint{font-size:.85rem;color:var(--sub);padding:8px 10px;border-top:1px solid var(--line);background:#fbfcfd}
+  .maphint b{color:var(--pri)}
+  .maphint-sch:empty{display:none}
+  .sugg{margin-top:8px}
+  .sugg .sub{font-size:.82rem;color:var(--sub);margin-bottom:6px}
+  button.chip{font:inherit;font-size:.86rem}
+  .brand-desc{background:var(--pri-soft);border-radius:8px;padding:10px 12px;font-size:.9rem;margin:6px 0 4px}
+  .toast{font-size:.85rem;color:var(--err);padding:0 10px 8px;display:none;background:#fbfcfd}
+  .pins{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  .pin{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fcfdfe}
+  .pin-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .pin-h .no{width:24px;height:24px;border-radius:50%;color:#fff;font-weight:700;font-size:.82rem;display:flex;align-items:center;justify-content:center;flex:none}
+  .pin-h .t{font-weight:600}
+  .pin-h .xy{font-size:.75rem;color:var(--sub)}
+  .pin-h .del{margin-left:auto;font:inherit;font-size:.82rem;padding:4px 10px;border:1px solid #e3b5b0;color:var(--err);background:#fff;border-radius:6px;cursor:pointer}
+  .pin .sub{font-size:.85rem;color:var(--sub);margin:8px 0 4px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:.86rem;padding:6px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:#fff}
+  .chip:has(input:checked){border-color:var(--pri);background:var(--pri-soft)}
+  .chip input{margin:0;accent-color:var(--pri)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .maptext{margin-top:10px}
+  .maptext .sub{font-size:.85rem;color:var(--sub);margin-bottom:4px}
+  .pinicon{width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+  .pinicon span{transform:rotate(45deg);color:#fff;font-weight:700;font-size:13px}
+  .schoolicon{background:#fff;border:2px solid var(--ink);border-radius:6px;font-size:11px;font-weight:700;padding:1px 4px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  /* 제출 */
+  .submitbar{margin-top:20px;display:flex;flex-direction:column;gap:8px}
+  .btn{font:inherit;font-weight:700;padding:14px;border:0;border-radius:10px;background:var(--pri);color:#fff;cursor:pointer;font-size:1.05rem}
+  .btn:disabled{opacity:.55;cursor:default}
+  .status{font-size:.9rem;color:var(--sub);min-height:1.2em;text-align:center}
+  .status.bad{color:var(--err)}
+  .done{background:#fff;border-radius:10px;padding:28px 20px;text-align:center;border-top:6px solid var(--ok)}
+  .done h2{margin:0 0 8px}
+  .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+  .demo-banner{background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;border-radius:8px;padding:8px 12px;font-size:.88rem;margin-bottom:12px}
+  /* 시험모드 미리보기 */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20000;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:20px 10px}
+  .modal.on{display:flex}
+  .modal .panel{background:#fff;border-radius:10px;max-width:980px;width:100%;padding:16px}
+  .modal h3{margin:4px 0 8px}
+  .modal table{border-collapse:collapse;width:100%;font-size:.78rem;margin-bottom:14px}
+  .modal th,.modal td{border:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
+  .modal th{background:#f3f6f9;white-space:nowrap}
+  .modal .scroll{overflow:auto;max-width:100%}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div id="demoBanner" class="demo-banner" hidden>시험 모드입니다. 제출하면 저장 대신 구글 시트에 들어갈 내용을 미리 보여줍니다.</div>
+  <header class="intro" id="intro"></header>
+  <form id="form" novalidate autocomplete="off">
+    <div id="common"></div>
+    <div id="form-parent" hidden></div>
+    <div id="form-staff" hidden></div>
+    <div id="form-tail" hidden></div>
+    <div class="hp" aria-hidden="true"><label>홈페이지<input type="text" id="hp_field" tabindex="-1"></label></div>
+    <div class="submitbar" id="submitbar" hidden>
+      <button type="submit" class="btn" id="submitBtn">제출하기</button>
+      <div class="status" id="status"></div>
+    </div>
+  </form>
+  <div id="doneBox" hidden></div>
+</div>
+<div class="modal" id="modal"><div class="panel" id="modalPanel"></div></div>
+
+<script>
+/* =====================================================================
+   1. 설정 — 배포 전에 이 부분만 고치면 됩니다.
+   ===================================================================== */
+const CONFIG = {
+  TITLE: '안전한 통학길 조성을 위한 학교 주변 통학로 안전 설문 (2026)',
+  ORG: '울산 동구청 ○○과',          // 담당 부서
+  CONTACT: '052-000-0000',           // 담당자 연락처
+  WRITE_DATE: '2026. 00. 00.',       // 작성일
+  SUBMIT_URL: 'https://script.google.com/macros/s/AKfycbzJFLWIqbG_ZWVpII13wYMiYgKWMHpqfyznLzIOerkyu7bg473f81zLTyxTAIDczkc/exec', // Apps Script 웹 앱 URL. 비우면 시험 모드
+  VWORLD_KEY: '92583079-C993-30A6-9C75-F9088B50EEE2', // 브이월드 인증키 (github.io 도메인 등록)
+  MAX_PINS: 3,                       // 지도 문항당 최대 지점 수
+  FOCUS_M: 1000,                     // 학교를 고르면 지도에 보여줄 학교 반경(m)
+  CENTER: [35.5047, 129.4163],       // 학교 좌표가 없을 때 지도 중심(동구 일원)
+  ZOOM: 14,
+  BOUNDS: [[35.44, 129.36], [35.58, 129.48]], // 핀을 꽂을 수 있는 범위(동구 일원 여유 포함)
+  // ── 마지막 추가 문항: 서비스 이름(브랜드) 선호 ──────────────────────────
+  //  보기 1~4번 = BRAND_NAMES, 5번 = 기타(직접 제안, 항상 마지막).
+  //  3·4번은 아직 미정이라 '' 로 비워 두었습니다. 비어 있는 번호는 응답자 화면에 나오지 않고,
+  //  이름을 넣으면 그 자리에 바로 보기로 나타납니다.  예) BRAND_NAMES: ['동구랑-맵', '동구온맵', '새이름3', '새이름4'],
+  BRAND_SERVICE: '드론 공간모니터링 서비스 · 동구 공간정보 시스템',
+  BRAND_DESC: '동구청이 드론으로 촬영한 최신 항공사진과 통학로·안전시설 같은 공간정보를 지도로 모아 보여주는 서비스입니다. 주민이 부르기 쉬운 이름을 정하려고 합니다.',
+  BRAND_NAMES: [
+    '동구랑-맵',   // 1번
+    '동구온맵',    // 2번
+    '',            // 3번 (미정) ← 정해지면 따옴표 안에 이름 입력
+    ''             // 4번 (미정) ← 정해지면 따옴표 안에 이름 입력
+  ],
+  // 5번 '기타(직접 제안)'을 고르면 나오는 입력칸 아래 예시 이름. 누르면 입력칸에 들어가고, 직접 고쳐 쓸 수 있습니다.
+  BRAND_SUGGEST: ['동구 하늘지도', '동구 드론뷰', '동구 한눈에맵', '동구 공간ON', '동구 보듬맵'],
+  REF_NOTE: '[참고] 도로교통공단 교통사고분석시스템(TAAS) 자료에 따르면 2025년 어린이보호구역 내 보행 어린이 교통사고는 496건으로 2023년(350건)보다 늘었고, 시간대별로는 오후 2~4시(129건), 오후 4~6시(125건), 오전 8~10시(88건) 순으로 많았습니다. (2026. 5. 21. 언론보도 인용)'
+};
+
+/* 학교 목록. lat/lng(WGS84)가 있으면 학교를 고를 때 지도가 그 학교로 이동합니다.
+   좌표: 브이월드 장소검색 '초등학교' 지점(2026.11.14. 조회). 학교시설 DB 좌표로 바꿔도 됩니다. */
+const SCHOOLS = [
+  {name:'남목초등학교', lat:35.5425095, lng:129.4247550},
+  {name:'녹수초등학교', lat:35.5308797, lng:129.4286600},
+  {name:'동부초등학교', lat:35.5449275, lng:129.4272870},
+  {name:'명덕초등학교', lat:35.5059668, lng:129.4245930},
+  {name:'문현초등학교', lat:35.4808968, lng:129.4139590},
+  {name:'미포초등학교', lat:35.5064005, lng:129.4218400},
+  {name:'방어진초등학교', lat:35.4867531, lng:129.4243240},
+  {name:'상진초등학교', lat:35.4915681, lng:129.4187620},
+  {name:'서부초등학교', lat:35.5259427, lng:129.4228020},
+  {name:'양지초등학교', lat:35.4973304, lng:129.4212260},
+  {name:'일산초등학교', lat:35.5049788, lng:129.4253350},
+  {name:'전하초등학교', lat:35.5154713, lng:129.4277990},
+  {name:'주전초등학교', lat:35.5580600, lng:129.4568690},
+  {name:'화암초등학교', lat:35.4841709, lng:129.4155990},
+  {name:'화정초등학교', lat:35.5017530, lng:129.4204000},
+  {name:'화진초등학교', lat:35.4914691, lng:129.4254900}
+];
+
+/* =====================================================================
+   2. 문항 — 2024년 문항 번호·보기를 유지하고, 바뀐 곳은 [변경]/[신규]로 표시
+   ===================================================================== */
+const O = {
+  grade: ['초등 1~2학년','초등 3~4학년','초등 5~6학년'],
+  mode: ['도보','자전거','차량(자가용, 통학버스 등)'],
+  dist: ['200m 이내','200~400m','400~600m','600~800m','800m 이상'],
+  time: ['10분 이내','10~20분','20~30분','30분 이상'],
+  comp: ['항상 있음','가끔 있음','없음'],
+  commute: ['등교 07~08시','등교 08~09시','하교 12~14시','하교 14~16시','하교 16~18시','하교 18시 이후'],
+  traffic: ['매우 한산함','한산함','보통','붐빔','매우 붐빔'],
+  discomfort: ['도로 폭이 좁음','보도가 없음','차량 통행이 많음','통행에 방해되는 시설물 있음','시인성 확보 미흡','신호등이 없거나, 신호체계 미흡'],
+  places: ['횡단보도 주변','불법 주정차된 구역','교차로 주변','좁은 골목길'],
+  days: ['월요일','화요일','수요일','목요일','금요일','토요일','일요일'],
+  dangerTime: ['등교시간대(8~9시)','하교시간대(12~14시)','방과후 시간대(14~16시)','방과후 시간대(16~18시)','방과후 시간대(18~20시)'],
+  yn: ['예','아니오'],
+  satisfy: ['매우 불만족','불만족','보통','만족','매우 만족'],
+  safe: ['예','아니오','개선 필요'],
+  change: ['매우 나빠짐','나빠짐','변화 없음','좋아짐','매우 좋아짐','잘 모르겠음'],
+  improved: ['안전펜스·보행 울타리','보도 신설·확장','횡단보도·신호등 설치','과속방지턱·고원식 횡단보도','CCTV','가로등·조명','노면표시·옐로카펫·바닥신호등','불법 주정차 단속·정비'],
+  staffGrade: ['초등 1~2학년','초등 3~4학년','초등 5~6학년','해당없음(교과전담·관리자 등)'],
+  // 지도 핀별 사유
+  pinReason: ['운전자·보행자 시야 사각지대','불법 주정차 차량','보도 없음·좁음','횡단보도 없음·대기공간 좁음','신호등 없음·신호체계 미흡','과속·차량 통행 많음','어두움(조명 부족)','안전시설 부족·파손(펜스·방지턱 등)','공사장·통행 방해 시설물','기타(설명에 적어주세요)'],
+  accDay: ['월','화','수','목','금','토','일','모름'],
+  accTime: ['등교(07~09시)','오전(09~12시)','하교(12~14시)','방과후(14~16시)','방과후(16~18시)','방과후(18~20시)','20시 이후','모름'],
+  accCause: ['회전(좌·우회전) 차량과 충돌','주정차 차량 사이로 나오다 충돌','신호 위반·무단횡단 관련','후진 차량','과속 차량','자전거·킥보드·이륜차와 충돌','모름','기타']
+};
+const crowded = a => ['붐빔','매우 붐빔'].includes(a.P07);
+const walkBike = a => ['도보','자전거'].includes(a.P03);
+const better = id => a => ['좋아짐','매우 좋아짐'].includes(a[id]);
+
+const COMMON = [
+  {id:'C00', col:'응답자구분', type:'radio', req:true, label:'통학 학생과 귀하의 관계는 어떻게 되시나요?',
+   opts:['학부모','교사','학교관계자'], other:true}
+];
+
+const PARENT = [
+  {type:'sec', label:'학부모용 설문 · 통학 기본 정보'},
+  {type:'info', label:'자녀가 2명 이상이면 자녀별로 각각 응답해 주시기 바랍니다. 학생과 상의하셔서 응답해 주시면 더욱 정확합니다.'},
+  {id:'P01', no:'1', col:'P01_학교명', type:'school', req:true, label:'초등학생 자녀의 학교를 선택해 주세요.', tag:'변경', help:'2024년에는 직접 입력 → 목록에서 선택'},
+  {id:'P02', no:'2', col:'P02_학년', type:'radio', req:true, label:'초등학생 자녀의 학년을 선택해 주세요.', opts:O.grade},
+  {id:'P03', no:'3', col:'P03_통학수단', type:'radio', req:true, label:'자녀의 주 통학 수단은 무엇인가요?', opts:O.mode, other:true},
+  {id:'P04_1', no:'4-1', col:'P04_1_통학거리', type:'radio', req:true, showIf:walkBike, label:'(도보·자전거 통학 시) 통학 거리는 어느 정도인가요?', opts:O.dist},
+  {id:'P04_2', no:'4-2', col:'P04_2_통학시간', type:'radio', req:true, showIf:walkBike, label:'(도보·자전거 통학 시) 통학 시간은 어느 정도인가요?', opts:O.time},
+  {id:'P05', no:'5', col:'P05_동반자', type:'radio', label:'자녀가 통학할 때 동반자(부모, 형제, 친구)가 있나요?', opts:O.comp},
+  {id:'P06', no:'6', col:'P06_통학시간대', type:'check', label:'자녀가 주로 통학하는 시간대를 모두 골라 주세요.', opts:O.commute, tag:'변경', help:'2024년에는 직접 입력 → 선택형 (복수응답 가능)'},
+
+  {type:'sec', label:'통학로 교통량'},
+  {id:'P07', no:'7', col:'P07_교통량', type:'radio', req:true, label:'통학 시간대에 통학로 인근의 교통량은 어떻게 느껴지나요?', opts:O.traffic},
+  {id:'P07_1', no:'7-1', col:'P07_1_혼잡지점', type:'map', showIf:crowded, color:'#7d5ba6', reasons:null,
+   label:'교통량이 붐비는 곳을 지도에 표시해 주세요.', tag:'변경',
+   help:'7번에서 "붐빔" 또는 "매우 붐빔"을 고르신 분만 응답합니다.'},
+
+  {type:'sec', label:'통학 중 불편·위험 요인'},
+  {id:'P08', no:'8', col:'P08_불편요소', type:'check', label:'자녀의 통학로에서 불편함을 느끼는 요소는 무엇인가요? (복수응답 가능)', opts:O.discomfort, other:true},
+  {id:'P09', no:'9', col:'P09_위험장소유형', type:'check', label:'자녀가 통학 중 위험하다고 느끼는 장소는 어디인가요? (복수응답 가능)', opts:O.places, other:true},
+  {id:'P10_1', no:'10-1', col:'P10_1_위험요일', type:'check', label:'자녀가 통학 중 위험하다고 느끼는 요일은 언제인가요? (복수응답 가능)', opts:O.days},
+  {id:'P10_2', no:'10-2', col:'P10_2_위험시간대', type:'check', label:'자녀가 통학 중 위험하다고 느끼는 시간대는 언제인가요? (복수응답 가능)', opts:O.dangerTime, other:true, help:'"하교시간대(12~14시)" 보기가 추가되었습니다.'},
+  {type:'ref'},
+
+  {type:'sec', label:'학교 주변 위험 지점 (지도 표시)'},
+  {id:'P11', no:'11', col:'P11_위험지점', type:'map', color:'#d35400', reasons:O.pinReason,
+   label:'학교 주변에서 위험한 곳을 지도에 표시하고, 위험한 이유를 골라 주세요.', tag:'변경',
+   help:'2024년에는 주소를 글로 입력 → 지도에 직접 표시'},
+
+  {type:'sec', label:'통학 중 사고 경험·목격'},
+  {id:'P12', no:'12', col:'P12_사고경험목격', type:'radio', req:true, label:'통학 중 자녀가 교통사고를 당하거나 목격한 적이 있습니까?', opts:O.yn},
+  {id:'P13', no:'13', col:'P13_사고지점', type:'map', showIf:a=>a.P12==='예', color:'#c0392b', accident:true,
+   label:'사고가 난 곳을 지도에 표시하고, 요일·시간대와 원인을 알려주세요.', tag:'변경'},
+
+  {type:'sec', label:'학교 주변 환경에 대한 인식'},
+  {id:'P14', no:'14', col:'P14_시설만족도', type:'radio', req:true, label:'학교 주변 교통·도로 안전시설물(CCTV, 신호등, 가로등, 가드레일, 과속방지턱 등)에 대해 얼마나 만족하십니까?', opts:O.satisfy},
+  {id:'P15', no:'15', col:'P15_보호구역인지', type:'radio', req:true, label:'통학로에 보행자 보호구역(어린이 보호구역 포함)이 있는 것을 알고 계십니까?', opts:O.yn},
+  {id:'P16', no:'16', col:'P16_보호구역안전', type:'radio', req:true, label:'보행자 보호구역에서 자녀의 안전이 보장된다고 느끼십니까?', opts:O.safe},
+  {id:'P_N01', no:'추가', col:'N01_변화체감', type:'radio', label:'2024년 이후 자녀의 통학로 안전이 어떻게 달라졌다고 느끼십니까?', opts:O.change, tag:'신규'},
+  {id:'P_N01_1', no:'추가', col:'N01_1_개선체감시설', type:'check', showIf:better('P_N01'), label:'좋아졌다고 느끼신 시설이나 조치를 모두 골라 주세요.', opts:O.improved, other:true, tag:'신규'},
+  {id:'P17', no:'17', col:'P17_개선의견', type:'textarea', label:'통학로 및 학교 주변 환경에서 개선이 필요하다고 생각하는 사항이 있다면 자유롭게 작성해 주세요.', help:'예: 신호등, 일시정지 표지판, CCTV, 가로등, 방지턱, 인도, 안전펜스 설치 등'}
+];
+
+const STAFF = [
+  {type:'sec', label:'교사·학교관계자용 설문'},
+  {id:'T01', no:'1', col:'T01_학교명', type:'school', req:true, label:'근무하시는 학교를 선택해 주세요.', tag:'변경'},
+  {id:'T02', no:'2', col:'T02_담당학년', type:'radio', req:true, label:'담당하고 있는 학년을 선택해 주세요.', opts:O.staffGrade, other:true},
+  {id:'T03', no:'3', col:'T03_불편요소', type:'check', label:'통학로에서 학생들이 불편함을 느낄 수 있는 요소는 무엇이라고 생각하십니까? (복수응답 가능)', opts:O.discomfort, other:true},
+  {id:'T04', no:'4', col:'T04_위험장소유형', type:'check', label:'학교 주변에서 학생들이 위험하다고 느낄 수 있는 장소를 선택해 주세요. (복수응답 가능)', opts:O.places, other:true},
+  {id:'T05', no:'5', col:'T05_위험지점', type:'map', color:'#d35400', reasons:O.pinReason,
+   label:'학교 주변에서 위험한 곳을 지도에 표시하고, 위험한 이유를 골라 주세요.', tag:'변경'},
+  {id:'T06', no:'6', col:'T06_사고다발장소', type:'radio', req:true, label:'교통사고가 자주 발생하는 장소가 있습니까?', opts:O.yn},
+  {id:'T07', no:'7', col:'T07_사고지점', type:'map', showIf:a=>a.T06==='예', color:'#c0392b', accident:true,
+   label:'사고가 자주 나는 곳을 지도에 표시하고, 요일·시간대와 원인을 알려주세요.', tag:'변경'},
+  {id:'T08', no:'8', col:'T08_시설평가', type:'radio', req:true, label:'학교 주변 교통·도로 안전시설물(CCTV, 신호등, 가로등, 가드레일, 과속방지턱 등)에 대해 어떻게 평가하십니까?', opts:O.satisfy},
+  {id:'T09', no:'9', col:'T09_보호구역인식', type:'radio', req:true, label:'보행자 보호구역(어린이 보호구역 포함)이 충분히 인식되고 있습니까?', opts:O.yn},
+  {id:'T10', no:'10', col:'T10_보호구역안전', type:'radio', req:true, label:'보행자 보호구역에서 학생들의 안전이 보장된다고 느끼십니까?', opts:O.safe},
+  {id:'T_N01', no:'추가', col:'N01_변화체감', type:'radio', label:'2024년 이후 학교 주변 통학로 안전이 어떻게 달라졌다고 느끼십니까?', opts:O.change, tag:'신규'},
+  {id:'T_N01_1', no:'추가', col:'N01_1_개선체감시설', type:'check', showIf:better('T_N01'), label:'좋아졌다고 느끼신 시설이나 조치를 모두 골라 주세요.', opts:O.improved, other:true, tag:'신규'},
+  {id:'T11', no:'11', col:'T11_개선의견', type:'textarea', label:'통학로 및 학교 주변 환경(교통시설, 보행자 보호구역 등)에서 개선이 필요하다고 생각하는 사항이 있다면 자유롭게 작성해 주세요.', help:'예: 신호등, 일시정지 표지판, CCTV, 가로등, 방지턱, 인도, 안전펜스 설치 등'}
+];
+
+/* =====================================================================
+   3. 동작 — 아래는 고치지 않아도 됩니다.
+   ===================================================================== */
+const DEMO = !CONFIG.SUBMIT_URL;
+const TAIL = [
+  {type:'sec', label:'추가 설문 · 동구 공간정보 서비스 이름'},
+  {id:'B01', no:'추가', col:'B01_서비스명칭', type:'radio', tag:'신규', brand:true,
+   label:'다음 서비스의 이름으로 가장 마음에 드는 것을 하나 골라 주세요.', opts:[], other:true},
+  {id:'B01_1', no:'추가', col:'B01_1_명칭의견', type:'textarea', tag:'신규',
+   label:'고르신 이유나 이름에 대한 의견이 있으면 적어 주세요. (선택)'}
+];
+TAIL[1].opts = CONFIG.BRAND_NAMES.slice(0, 4).map(x => String(x || '').trim()).filter(Boolean);
+const ALL = [...COMMON, ...PARENT, ...STAFF, ...TAIL];
+const BYID = Object.fromEntries(ALL.filter(q => q.id).map(q => [q.id, q]));
+const S = { a:{}, other:{}, pins:{}, mapText:{}, rt:{}, rid: newId() };
+
+proj4.defs('EPSG:5186','+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs');
+proj4.defs('EPSG:5187','+proj=tmerc +lat_0=38 +lon_0=129 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs');
+proj4.defs('EPSG:5179','+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs');
+
+function newId(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+function el(tag, attrs, ...kids){
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})){
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined) e.append(k);
+  return e;
+}
+const formOf = id => id.startsWith('P') ? 'parent' : id.startsWith('T') ? 'staff' : id.startsWith('B') ? 'tail' : 'common';
+function activeForm(){
+  const r = S.a.C00;
+  if (!r) return null;
+  return r === '학부모' ? 'parent' : 'staff';     // 교사·학교관계자·기타 → 교사·관계자용
+}
+function schoolOf(form){
+  const id = form === 'parent' ? 'P01' : 'T01';
+  return SCHOOLS.find(s => s.name === S.a[id]) || null;
+}
+
+/* ---------- 머리말 ---------- */
+function renderIntro(){
+  const h = document.getElementById('intro');
+  h.append(
+    el('h1', {text: CONFIG.TITLE}),
+    el('p', {text:'안녕하십니까? 본 조사는 울산 동구 초등학교를 대상으로 안전한 통학길을 조성하기 위해 학교 주변 통학로의 교통사고 위험 지점을 파악하는 설문조사입니다.'}),
+    el('p', {text:'2024년에 이어 두 번째로 실시하는 조사로, 그동안 달라진 통학로 여건과 새로 생긴 위험 지점을 반영하고자 합니다. 이번에는 위험한 곳을 지도에 직접 표시하실 수 있습니다.'}),
+    el('div', {class:'notice', text:'• 응답 시간은 약 5~7분입니다.  • 이름·연락처 등 개인정보는 수집하지 않습니다.  • 지도에 표시하신 위치는 통학로 안전 분석에만 사용됩니다.'}),
+    el('div', {class:'meta', text:`${CONFIG.WRITE_DATE}  ${CONFIG.ORG} (문의 ${CONFIG.CONTACT})`})
+  );
+}
+
+/* ---------- 문항 그리기 ---------- */
+function renderList(list, host){
+  for (const q of list){
+    if (q.type === 'sec'){ host.append(el('div', {class:'sec', text:q.label})); continue; }
+    if (q.type === 'info'){ host.append(el('div', {class:'refnote', text:q.label})); continue; }
+    if (q.type === 'ref'){ host.append(el('div', {class:'refnote', text:CONFIG.REF_NOTE})); continue; }
+    host.append(renderQ(q));
+  }
+}
+function renderQ(q){
+  const box = el('div', {class:'q', id:'q_' + q.id, 'data-id':q.id});
+  const lab = el('div', {class:'label'},
+    (q.no && q.no !== '추가' ? q.no + '. ' : '') + q.label,
+    q.req ? el('span', {class:'req', text:'*'}) : null,
+    q.tag ? el('span', {class:'tag', text:q.tag}) : null);
+  box.append(lab);
+  if (q.help) box.append(el('div', {class:'help', text:q.help}));
+  if (q.brand) box.append(el('div', {class:'brand-desc'}, el('b', {text:CONFIG.BRAND_SERVICE}), el('div', {text:CONFIG.BRAND_DESC})));
+
+  if (q.type === 'radio' || q.type === 'check'){
+    const opts = el('div', {class:'opts'});
+    const list = [...q.opts, ...(q.other ? ['기타'] : [])];
+    list.forEach(o => {
+      const inp = el('input', {type: q.type === 'radio' ? 'radio' : 'checkbox', name:q.id, value:o,
+        onchange: () => { readChoice(q); refresh(); }});
+      const txt = !q.brand ? o : `${list.indexOf(o) + 1}. ${o === '기타' ? '기타(직접 제안)' : o}`;
+      opts.append(el('label', {class:'opt'}, inp, el('span', {text: txt})));
+    });
+    box.append(opts);
+    if (q.other){
+      const oi = el('input', {type:'text', class:'other-in', placeholder: q.brand ? '제안하실 이름을 적어 주세요' : '기타 내용을 적어 주세요', hidden:true,
+        oninput: e => { S.other[q.id] = e.target.value; }});
+      oi.id = 'other_' + q.id;
+      box.append(oi);
+      const sugg = q.brand ? CONFIG.BRAND_SUGGEST.filter(n => !q.opts.includes(n)) : [];   // 보기로 올라간 이름은 예시에서 뺌
+      if (sugg.length){
+        const sg = el('div', {class:'sugg', id:'sugg_' + q.id, hidden:true},
+          el('div', {class:'sub', text:'예시 이름 (누르면 입력칸에 들어갑니다. 직접 고쳐 쓰셔도 됩니다)'}),
+          el('div', {class:'chips'}, sugg.map(n => el('button', {type:'button', class:'chip', text:n,
+            onclick: () => { oi.value = n; S.other[q.id] = n; clearErr(q.id); }}))));
+        box.append(sg);
+      }
+    }
+  } else if (q.type === 'school'){
+    const sel = el('select', {id:'sel_' + q.id, onchange: e => {
+      S.a[q.id] = e.target.value; document.getElementById('other_' + q.id).hidden = e.target.value !== '기타';
+      clearErr(q.id); moveMapsToSchool(formOf(q.id)); refresh(); }},
+      el('option', {value:'', text:'학교를 선택해 주세요'}),
+      SCHOOLS.map(s => el('option', {value:s.name, text:s.name})),
+      el('option', {value:'기타', text:'기타(직접 입력)'}));
+    const oi = el('input', {type:'text', class:'other-in', placeholder:'학교명을 적어 주세요', hidden:true,
+      oninput: e => { S.other[q.id] = e.target.value; }});
+    oi.id = 'other_' + q.id;
+    box.append(sel, oi);
+  } else if (q.type === 'textarea'){
+    box.append(el('textarea', {oninput: e => { S.a[q.id] = e.target.value; }}));
+  } else if (q.type === 'map'){
+    renderMapQ(q, box);
+  }
+  box.append(el('div', {class:'errmsg', text:'응답이 필요한 문항입니다.'}));
+  return box;
+}
+function readChoice(q){
+  const ins = [...document.querySelectorAll(`input[name="${q.id}"]`)];
+  if (q.type === 'radio'){ const c = ins.find(i => i.checked); S.a[q.id] = c ? c.value : ''; }
+  else S.a[q.id] = ins.filter(i => i.checked).map(i => i.value);
+  if (q.other){
+    const v = S.a[q.id];
+    const on = Array.isArray(v) ? v.includes('기타') : v === '기타';
+    document.getElementById('other_' + q.id).hidden = !on;
+    const sg = document.getElementById('sugg_' + q.id); if (sg) sg.hidden = !on;
+  }
+  clearErr(q.id);
+}
+
+/* ---------- 지도 문항 ---------- */
+function renderMapQ(q, box){
+  S.pins[q.id] = [];
+  const mapDiv = el('div', {class:'map', id:'map_' + q.id});
+  const btnBase = el('button', {type:'button', class:'on', text:'일반지도'});
+  const btnSat  = el('button', {type:'button', text:'영상지도'});
+  const btnSch  = el('button', {type:'button', text:'학교 위치로'});
+  const btnFull = el('button', {type:'button', text:'크게 보기'});
+  const btnClose= el('button', {type:'button', class:'close', text:'닫기'});
+  const toast = el('div', {class:'toast'});
+  const mb = el('div', {class:'mapbox'},
+    el('div', {class:'mapbar'}, btnBase, btnSat, btnSch, btnFull, btnClose),
+    mapDiv,
+    toast,
+    (() => { const h = el('div', {class:'maphint maphint-sch'}); return h; })(),
+    el('div', {class:'maphint'}, '지도를 움직이거나 확대해 위치를 찾은 뒤, ', el('b', {text:'해당 지점을 누르면 핀이 꽂힙니다.'}),
+      ` 핀은 끌어서 옮길 수 있습니다. (최대 ${CONFIG.MAX_PINS}곳)`));
+  const pins = el('div', {class:'pins', id:'pins_' + q.id});
+  const mt = el('div', {class:'maptext'},
+    el('div', {class:'sub', text:'지도에서 찾기 어려우면 장소를 글로 적어 주세요. (예: 동구 ○○동 ○○마트 앞 사거리)'}),
+    el('input', {type:'text', oninput: e => { S.mapText[q.id] = e.target.value; }}),
+    el('div', {class:'sub', id:'mtnote_' + q.id, hidden:true, text:'가능하면 지도에도 표시해 주세요. 지도에 찍은 위치만 위험지점 분석에 바로 쓰입니다.'}));
+  box.append(mb, pins, mt);
+  S.rt[q.id] = {map:null, markers:[], mapDiv, mb, toast, btnBase, btnSat, btnSch, btnFull, btnClose, schoolMarker:null, ring:null, hint: mb.querySelector('.maphint-sch')};
+}
+
+function tileLayers(){
+  const k = CONFIG.VWORLD_KEY;
+  if (k){
+    const att = '&copy; 국토교통부 브이월드';
+    return {
+      base: L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Base/{z}/{y}/{x}.png`, {maxZoom:19, attribution:att}),
+      sat: L.layerGroup([
+        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Satellite/{z}/{y}/{x}.jpeg`, {maxZoom:19, attribution:att}),
+        L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${k}/Hybrid/{z}/{y}/{x}.png`, {maxZoom:19})
+      ])
+    };
+  }
+  return { // 미리보기용 (실제 배포 시 브이월드 키 사용 권장)
+    base: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}),
+    sat: null
+  };
+}
+
+function ensureMap(q){
+  const rt = S.rt[q.id];
+  if (rt.map){ setTimeout(() => rt.map.invalidateSize(), 60); return; }
+  const sch = schoolOf(formOf(q.id));
+  const hasSch = sch && sch.lat != null;
+  const bounds = L.latLngBounds(CONFIG.BOUNDS);
+  const map = L.map(rt.mapDiv, {center: hasSch ? [sch.lat, sch.lng] : CONFIG.CENTER, zoom: hasSch ? 15 : CONFIG.ZOOM,
+    minZoom:11, maxZoom:19, maxBounds: bounds.pad(0.3), maxBoundsViscosity: 0.8});
+  const tl = tileLayers();
+  tl.base.addTo(map);
+  rt.map = map; rt.tl = tl;
+  if (!tl.sat){ rt.btnSat.disabled = true; rt.btnSat.title = '브이월드 키를 넣으면 사용할 수 있습니다'; }
+  rt.btnBase.onclick = () => { if (tl.sat) map.removeLayer(tl.sat); tl.base.addTo(map); rt.btnBase.classList.add('on'); rt.btnSat.classList.remove('on'); };
+  rt.btnSat.onclick  = () => { if (!tl.sat) return; map.removeLayer(tl.base); tl.sat.addTo(map); rt.btnSat.classList.add('on'); rt.btnBase.classList.remove('on'); };
+  rt.btnSch.onclick  = () => {
+    const s = schoolOf(formOf(q.id));
+    if (s && s.lat != null) focusSchool(q);
+    else flash(q.id, s ? '이 학교의 좌표가 아직 등록되지 않았습니다. 지도를 직접 움직여 주세요.' : '먼저 1번 문항에서 학교를 선택해 주세요.');
+  };
+  rt.btnFull.onclick = () => { rt.mb.classList.add('full'); document.body.style.overflow = 'hidden'; setTimeout(() => map.invalidateSize(), 60); };
+  rt.btnClose.onclick = () => { rt.mb.classList.remove('full'); document.body.style.overflow = ''; setTimeout(() => map.invalidateSize(), 60); };
+  map.on('click', e => addPin(q, e.latlng));
+  setTimeout(() => { map.invalidateSize(); focusSchool(q); }, 60);
+}
+
+/* 학교를 고르면 지도를 학교 반경 FOCUS_M(기본 1km)에 맞추고, 반경 원을 그리고,
+   이동 범위를 반경의 1.5배 안으로 제한합니다. 학교가 없거나 '기타'면 동구 전체. */
+function focusSchool(q){
+  const rt = S.rt[q.id]; if (!rt.map) return;
+  const map = rt.map, s = schoolOf(formOf(q.id));
+  placeSchoolMarker(q);
+  if (rt.ring){ map.removeLayer(rt.ring); rt.ring = null; }
+  if (s && s.lat != null){
+    const c = L.latLng(s.lat, s.lng), R = CONFIG.FOCUS_M;
+    rt.ring = L.circle(c, {radius:R, color:'#1d5f8a', weight:2, dashArray:'6 6', fill:false, interactive:false}).addTo(map);
+    const view = c.toBounds(R * 2), limit = c.toBounds(R * 3);
+    map.setMinZoom(11); map.setMaxBounds(null);
+    map.invalidateSize();
+    map.fitBounds(view, {padding:[6, 6], animate:false});
+    map.setMaxBounds(limit);
+    map.setMinZoom(Math.max(11, map.getBoundsZoom(limit, false) - 0));
+    rt.hint && (rt.hint.textContent = `${s.name} 반경 ${R >= 1000 ? R / 1000 + 'km' : R + 'm'}(점선 원)을 보여줍니다.`);
+  } else {
+    map.setMaxBounds(L.latLngBounds(CONFIG.BOUNDS).pad(0.3)); map.setMinZoom(11);
+    map.setView(CONFIG.CENTER, CONFIG.ZOOM, {animate:false});
+    rt.hint && (rt.hint.textContent = s ? '' : '먼저 1번 문항에서 학교를 고르면 학교 주변 지도가 나옵니다.');
+  }
+}
+
+function placeSchoolMarker(q){
+  const rt = S.rt[q.id]; if (!rt.map) return;
+  if (rt.schoolMarker){ rt.map.removeLayer(rt.schoolMarker); rt.schoolMarker = null; }
+  const s = schoolOf(formOf(q.id));
+  if (s && s.lat != null){
+    rt.schoolMarker = L.marker([s.lat, s.lng], {interactive:false, keyboard:false,
+      icon: L.divIcon({className:'', html:`<div class="schoolicon">${s.name.replace('초등학교','초')}</div>`, iconSize:null})}).addTo(rt.map);
+  }
+}
+function moveMapsToSchool(form){
+  const s = schoolOf(form);
+  for (const [id, rt] of Object.entries(S.rt)){
+    if (formOf(id) !== form || !rt.map) continue;
+    focusSchool(BYID[id]);
+  }
+}
+function flash(id, msg){
+  const t = S.rt[id].toast; t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, 3500);
+}
+function pinIcon(color, n){
+  return L.divIcon({className:'', iconSize:[28,28], iconAnchor:[14,28],
+    html:`<div class="pinicon" style="background:${color}"><span>${n}</span></div>`});
+}
+function distM(a, b){ const R = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r;
+  const h = Math.sin(dLa/2)**2 + Math.cos(a.lat*r) * Math.cos(b.lat*r) * Math.sin(dLo/2)**2; return 2 * R * Math.asin(Math.sqrt(h)); }
+function farCheck(q, ll){
+  const s = schoolOf(formOf(q.id));
+  if (s && s.lat != null && distM({lat:s.lat, lng:s.lng}, ll) > CONFIG.FOCUS_M)
+    flash(q.id, `선택하신 ${s.name}에서 ${CONFIG.FOCUS_M >= 1000 ? CONFIG.FOCUS_M / 1000 + 'km' : CONFIG.FOCUS_M + 'm'} 넘게 떨어진 곳입니다. 위치가 맞는지 확인해 주세요.`);
+}
+function addPin(q, ll){
+  const list = S.pins[q.id], rt = S.rt[q.id];
+  if (list.length >= CONFIG.MAX_PINS){ flash(q.id, `최대 ${CONFIG.MAX_PINS}곳까지 표시할 수 있습니다. 기존 지점을 삭제하거나 옮겨 주세요.`); return; }
+  if (!L.latLngBounds(CONFIG.BOUNDS).contains(ll)){ flash(q.id, '동구 지역 밖입니다. 학교 주변을 표시해 주세요.'); return; }
+  const p = {lat:ll.lat, lng:ll.lng, reasons:[], desc:'', day:'', time:'', cause:'', causeText:''};
+  farCheck(q, ll);
+  list.push(p);
+  const m = L.marker(ll, {draggable:true, icon:pinIcon(q.color, list.length)}).addTo(rt.map);
+  m.on('dragend', () => {
+    const nl = m.getLatLng();
+    if (!L.latLngBounds(CONFIG.BOUNDS).contains(nl)){ m.setLatLng([p.lat, p.lng]); flash(q.id, '동구 지역 밖으로는 옮길 수 없습니다.'); return; }
+    p.lat = nl.lat; p.lng = nl.lng; farCheck(q, nl); renderPins(q);
+  });
+  rt.markers.push(m);
+  clearErr(q.id);
+  renderPins(q);
+}
+function delPin(q, i){
+  const rt = S.rt[q.id];
+  rt.map.removeLayer(rt.markers[i]);
+  rt.markers.splice(i, 1); S.pins[q.id].splice(i, 1);
+  rt.markers.forEach((m, k) => m.setIcon(pinIcon(q.color, k + 1)));
+  renderPins(q);
+}
+function renderPins(q){
+  const host = document.getElementById('pins_' + q.id);
+  host.replaceChildren();
+  S.pins[q.id].forEach((p, i) => {
+    const card = el('div', {class:'pin'});
+    card.append(el('div', {class:'pin-h'},
+      el('div', {class:'no', style:`background:${q.color}`, text:String(i + 1)}),
+      el('div', {}, el('div', {class:'t', text:`지점 ${i + 1}`}), el('div', {class:'xy', text:`위도 ${p.lat.toFixed(5)}, 경도 ${p.lng.toFixed(5)}`})),
+      el('button', {type:'button', class:'del', text:'삭제', onclick: () => delPin(q, i)})));
+    if (q.reasons){
+      card.append(el('div', {class:'sub', text:'위험한 이유 (여러 개 선택 가능)'}));
+      const chips = el('div', {class:'chips'});
+      q.reasons.forEach(r => {
+        chips.append(el('label', {class:'chip'},
+          el('input', {type:'checkbox', checked: p.reasons.includes(r), onchange: e => {
+            if (e.target.checked){ if (!p.reasons.includes(r)) p.reasons.push(r); }
+            else p.reasons = p.reasons.filter(x => x !== r);
+          }}), r));
+      });
+      card.append(chips);
+    }
+    if (q.accident){
+      const sd = el('select', {onchange: e => { p.day = e.target.value; }},
+        el('option', {value:'', text:'요일 선택'}), O.accDay.map(d => el('option', {value:d, text:d, selected: p.day === d})));
+      const st = el('select', {onchange: e => { p.time = e.target.value; }},
+        el('option', {value:'', text:'시간대 선택'}), O.accTime.map(d => el('option', {value:d, text:d, selected: p.time === d})));
+      card.append(el('div', {class:'sub', text:'사고 요일·시간대'}), el('div', {class:'row2'}, sd, st));
+      const sc = el('select', {onchange: e => { p.cause = e.target.value; }},
+        el('option', {value:'', text:'사고 원인 선택'}), O.accCause.map(d => el('option', {value:d, text:d, selected: p.cause === d})));
+      const ci = el('input', {type:'text', placeholder:'(선택) 자세한 상황', oninput: e => { p.causeText = e.target.value; }});
+      ci.value = p.causeText || '';
+      card.append(el('div', {class:'sub', text:'사고 원인'}), sc, el('div', {style:'height:6px'}), ci);
+    }
+    const di = el('input', {type:'text', placeholder:'(선택) 예: ○○마트 앞 횡단보도', oninput: e => { p.desc = e.target.value; }});
+    di.value = p.desc;
+    card.append(el('div', {class:'sub', text:'장소 설명'}), di);
+    host.append(card);
+  });
+}
+
+/* ---------- 표시 여부 갱신 ---------- */
+function visible(q){
+  const f = formOf(q.id);
+  if (f === 'tail') { if (!activeForm()) return false; }
+  else if (f !== 'common' && f !== activeForm()) return false;
+  return !q.showIf || q.showIf(S.a);
+}
+function refresh(){
+  const f = activeForm();
+  document.getElementById('form-parent').hidden = f !== 'parent';
+  document.getElementById('form-staff').hidden  = f !== 'staff';
+  document.getElementById('form-tail').hidden   = !f;
+  document.getElementById('submitbar').hidden = !f;
+  for (const q of ALL){
+    if (!q.id) continue;
+    const box = document.getElementById('q_' + q.id);
+    const v = visible(q);
+    box.hidden = !v;
+    if (v && q.type === 'map') ensureMap(q);
+  }
+}
+
+/* ---------- 검사·제출 ---------- */
+function clearErr(id){ const b = document.getElementById('q_' + id); if (b) b.classList.remove('err'); }
+function isEmpty(v){ return v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0); }
+function validate(){
+  let first = null;
+  for (const q of ALL.filter(x => x.type === 'map')){
+    const n = document.getElementById('mtnote_' + q.id);
+    if (n) n.hidden = !(visible(q) && (S.mapText[q.id] || '').trim() && S.pins[q.id].length === 0);
+  }
+  for (const q of ALL){
+    if (!q.id || !visible(q)) continue;
+    const v = S.a[q.id];
+    let bad = !!q.req && isEmpty(v);
+    const otherOn = Array.isArray(v) ? v.includes('기타') : v === '기타';
+    if (!bad && (q.other || q.type === 'school') && otherOn && !(S.other[q.id] || '').trim()) bad = true;
+    const box = document.getElementById('q_' + q.id);
+    box.classList.toggle('err', bad);
+    if (bad && !first) first = box;
+  }
+  if (first) first.scrollIntoView({behavior:'smooth', block:'center'});
+  return !first;
+}
+function fmt(q){
+  const v = S.a[q.id];
+  const oth = (S.other[q.id] || '').trim();
+  if (Array.isArray(v)) return v.map(x => x === '기타' ? '기타: ' + oth : x).join('; ');
+  if (v === '기타') return '기타: ' + oth;
+  return v || '';
+}
+function localStamp(){
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
+}
+function xy(code, p){ const r = proj4('EPSG:4326', code, [p.lng, p.lat]); return [+r[0].toFixed(2), +r[1].toFixed(2)]; }
+function buildPayload(){
+  const form = activeForm();
+  const list = [...(form === 'parent' ? PARENT : STAFF), ...TAIL];
+  const resp = fmt(BYID.C00);
+  const schQ = form === 'parent' ? BYID.P01 : BYID.T01;
+  const school = S.a[schQ.id] === '기타' ? '기타: ' + (S.other[schQ.id] || '').trim() : S.a[schQ.id];
+  const row = {'응답ID':S.rid, '설문연도':'2026', '제출시각(기기)':localStamp(), '응답자구분':resp};
+  const pins = [];
+  for (const q of list){
+    if (!q.id) continue;
+    const v = visible(q);
+    if (q.type === 'school'){ row[q.col] = school; continue; }
+    if (q.type === 'map'){
+      row[q.col + '_지점수'] = v ? S.pins[q.id].length : '';
+      row[q.col + '_글로적은위치'] = v ? (S.mapText[q.id] || '').trim() : '';
+      if (!v) continue;
+      S.pins[q.id].forEach((p, i) => {
+        const a = xy('EPSG:5186', p), b = xy('EPSG:5187', p), c = xy('EPSG:5179', p);
+        pins.push({'응답ID':S.rid, '응답자구분':resp, '학교':school, '문항':q.col, '순번':i + 1,
+          '위도':+p.lat.toFixed(7), '경도':+p.lng.toFixed(7),
+          'X_5186':a[0], 'Y_5186':a[1], 'X_5187':b[0], 'Y_5187':b[1], 'X_5179':c[0], 'Y_5179':c[1],
+          '사유':p.reasons.join('; '), '장소설명':p.desc.trim(),
+          '사고요일':q.accident ? p.day : '', '사고시간대':q.accident ? p.time : '', '사고원인':q.accident ? p.cause : '', '사고상황':q.accident ? (p.causeText || '').trim() : ''});
+      });
+      continue;
+    }
+    row[q.col] = v ? (q.type === 'textarea' ? (S.a[q.id] || '').trim() : fmt(q)) : '';
+  }
+  return {response_id:S.rid, form, row, pins, hp: document.getElementById('hp_field').value};
+}
+
+async function submit(ev){
+  ev.preventDefault();
+  const st = document.getElementById('status'), btn = document.getElementById('submitBtn');
+  st.className = 'status'; st.textContent = '';
+  if (!validate()){ st.className = 'status bad'; st.textContent = '빨간 테두리 문항에 응답해 주세요.'; return; }
+  const payload = buildPayload();
+  if (DEMO){ showPreview(payload); return; }
+  btn.disabled = true; st.textContent = '제출 중입니다…';
+  const body = JSON.stringify(payload);
+  let res;
+  try {
+    res = await fetch(CONFIG.SUBMIT_URL, {method:'POST', body});
+  } catch (netErr){
+    // 브라우저 보안정책(CORS)으로 응답을 못 읽는 경우가 있어 한 번 더 보냅니다. 서버는 응답ID로 중복 저장을 막습니다.
+    try { await fetch(CONFIG.SUBMIT_URL, {method:'POST', mode:'no-cors', body}); showDone(); }
+    catch (e2){ btn.disabled = false; st.className = 'status bad'; st.textContent = '네트워크 오류로 제출하지 못했습니다. 잠시 후 다시 눌러 주세요.'; }
+    return;
+  }
+  try {
+    let j = await res.json();
+    // 동시 접속으로 서버가 바쁘면 3초 간격으로 최대 3번 자동 재시도 (서버는 응답ID로 중복 저장을 막음)
+    for (let k = 0; k < 3 && !j.ok && j.busy; k++){
+      st.textContent = `접속이 많아 잠시 기다리는 중입니다… (${k + 1}/3)`;
+      await new Promise(r => setTimeout(r, 3000));
+      j = await (await fetch(CONFIG.SUBMIT_URL, {method:'POST', body})).json();
+    }
+    if (!j.ok) throw new Error(j.error || '저장 실패');
+    showDone();
+  } catch (e){
+    btn.disabled = false; st.className = 'status bad'; st.textContent = '저장 중 오류가 발생했습니다. 다시 눌러 주세요. (' + e.message + ')';
+  }
+}
+function showDone(){
+  document.getElementById('form').hidden = true;
+  document.getElementById('intro').hidden = true;
+  const d = document.getElementById('doneBox');
+  d.hidden = false;
+  d.replaceChildren(el('div', {class:'done'},
+    el('h2', {text:'응답해 주셔서 감사합니다.'}),
+    el('p', {text:'보내주신 의견은 통학로 위험 지점 분석과 안전시설 개선에 활용하겠습니다.'}),
+    el('p', {text:'다른 자녀에 대해서도 응답하시려면 아래 버튼을 눌러 주세요.'}),
+    el('button', {type:'button', class:'btn', text:'새로 응답하기', onclick: () => location.reload()})));
+  window.scrollTo(0, 0);
+}
+function tableOf(rows){
+  const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+  return el('div', {class:'scroll'}, el('table', {},
+    el('thead', {}, el('tr', {}, keys.map(k => el('th', {text:k})))),
+    el('tbody', {}, rows.map(r => el('tr', {}, keys.map(k => el('td', {text: r[k] === undefined ? '' : String(r[k])})))))));
+}
+function showPreview(p){
+  const panel = document.getElementById('modalPanel');
+  const sheet = p.form === 'parent' ? '응답_학부모' : '응답_교사관계자';
+  panel.replaceChildren(
+    el('h3', {text:'시험 모드 — 구글 시트에 저장될 내용 미리보기'}),
+    el('p', {class:'help', text:'SUBMIT_URL을 넣으면 아래 내용이 실제로 저장됩니다.'}),
+    el('h3', {text:`① [${sheet}] 시트 (1행)`}), tableOf([p.row]),
+    el('h3', {text:`② [지점] 시트 (${p.pins.length}행)`}), p.pins.length ? tableOf(p.pins) : el('p', {text:'표시한 지점이 없습니다.'}),
+    el('button', {type:'button', class:'btn', text:'닫기', onclick: () => document.getElementById('modal').classList.remove('on')}));
+  document.getElementById('modal').classList.add('on');
+  window.__lastPayload = p;
+}
+
+/* ---------- 시작 ---------- */
+renderIntro();
+renderList(COMMON, document.getElementById('common'));
+renderList(PARENT, document.getElementById('form-parent'));
+renderList(STAFF, document.getElementById('form-staff'));
+renderList(TAIL, document.getElementById('form-tail'));
+document.getElementById('demoBanner').hidden = !DEMO;
+document.getElementById('form').addEventListener('submit', submit);
+refresh();
+window.__survey = {S, CONFIG, buildPayload, addPin: (id, lat, lng) => addPin(BYID[id], L.latLng(lat, lng))};
+</script>
+</body>
+</html>
